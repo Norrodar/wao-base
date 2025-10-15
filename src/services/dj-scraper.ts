@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import type { Element } from 'cheerio';
 import { db, BotDJ } from '../database';
 import { logger } from '../utils/logger';
 import { config } from '../config';

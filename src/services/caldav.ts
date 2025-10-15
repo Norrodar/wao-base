@@ -114,7 +114,7 @@ export class CalDAVService {
     const startDateTime = this.parseDateTime(show.day, show.start);
     const endDateTime = this.parseDateTime(show.day, show.end);
 
-    return {
+    const event = this.calendar.createEvent({
       id: uuidv4(),
       start: startDateTime,
       end: endDateTime,
@@ -137,7 +137,9 @@ export class CalDAVService {
         trigger: 900, // 15 minutes before
         description: `Show startet in 15 Minuten: ${show.title}`
       }]
-    };
+    });
+
+    return event;
   }
 
   private createSummaryEvent(day: string, shows: Show[], stationDomain: string): ICalEvent {
@@ -148,7 +150,7 @@ export class CalDAVService {
       .map(show => `${show.start} - ${show.title} (${show.dj})`)
       .join('\n');
 
-    return {
+    const event = this.calendar.createEvent({
       id: uuidv4(),
       start: startDateTime,
       end: endDateTime,
@@ -163,14 +165,16 @@ export class CalDAVService {
       busyStatus: 'FREE',
       transparency: 'TRANSPARENT',
       allDay: true
-    };
+    });
+
+    return event;
   }
 
   private parseDateTime(day: string, time: string): Date {
     const [year, month, dayNum] = day.split('-').map(Number);
     const [hours, minutes] = time.split(':').map(Number);
     
-    return new Date(year, month - 1, dayNum, hours, minutes);
+    return new Date(year || 2024, (month || 1) - 1, dayNum || 1, hours || 0, minutes || 0);
   }
 
   private formatDate(day: string): string {
