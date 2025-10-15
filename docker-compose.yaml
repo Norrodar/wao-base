@@ -1,0 +1,39 @@
+services:
+  wao-base:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wao-base
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      - WAOBASE_TZ=${WAOBASE_TZ:-Europe/Berlin}
+      - WAOBASE_PUID=${WAOBASE_PUID:-1000}
+      - WAOBASE_PGID=${WAOBASE_PGID:-1000}
+      - WAOBASE_PORT=8080
+      - WAOBASE_BASE_URL=${WAOBASE_BASE_URL:-http://localhost:8080}
+      - WAOBASE_STATIONS=${WAOBASE_STATIONS:-technobase.fm,housetime.fm}
+      - WAOBASE_CRON_SCHEDULE=${WAOBASE_CRON_SCHEDULE:-0 */2 * * *}
+      - WAOBASE_RETENTION_DAYS=${WAOBASE_RETENTION_DAYS:-60}
+      - WAOBASE_HTTP_PROXY=${WAOBASE_HTTP_PROXY:-}
+      - WAOBASE_HTTPS_PROXY=${WAOBASE_HTTPS_PROXY:-}
+      - WAOBASE_NODE_ENV=production
+      - WAOBASE_LOG_LEVEL=${WAOBASE_LOG_LEVEL:-info}
+      - WAOBASE_TELEGRAM_ENABLED=${WAOBASE_TELEGRAM_ENABLED:-false}
+      - WAOBASE_TELEGRAM_BOT_TOKEN=${WAOBASE_TELEGRAM_BOT_TOKEN:-}
+      - WAOBASE_TELEGRAM_WEBHOOK_URL=${WAOBASE_TELEGRAM_WEBHOOK_URL:-}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - wao-base-network
+
+networks:
+  wao-base-network:
+    driver: bridge
