@@ -410,8 +410,9 @@ Viel Spaß beim Hören! 🎧`;
       const [stationDomain, djName] = params;
       await db.addBotFavoriteDJ(query.from.id, stationDomain, djName);
       
-      await this.bot.answerCallbackQuery(query.id, 
-        `✅ ${djName} hinzugefügt!`);
+      await this.bot.answerCallbackQuery(query.id, {
+        text: `✅ ${djName} hinzugefügt!`
+      });
       
       await this.bot.editMessageText(
         `✅ **${djName}** zu deinen Lieblings-DJs hinzugefügt!\n\n` +
@@ -428,8 +429,9 @@ Viel Spaß beim Hören! 🎧`;
       const [stationDomain, djName] = params;
       await db.removeBotFavoriteDJ(query.from.id, stationDomain, djName);
       
-      await this.bot.answerCallbackQuery(query.id, 
-        `✅ ${djName} entfernt!`);
+      await this.bot.answerCallbackQuery(query.id, {
+        text: `✅ ${djName} entfernt!`
+      });
       
       await this.bot.editMessageText(
         `✅ **${djName}** aus deinen Lieblings-DJs entfernt!`,

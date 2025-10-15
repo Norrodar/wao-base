@@ -65,7 +65,8 @@ export async function caldavRoutes(fastify: FastifyInstance) {
       }
 
       // Get days parameter (default 7 days)
-      const days = parseInt(request.query.days as string) || 7;
+      const query = request.query as { days?: string };
+      const days = parseInt(query.days || '7') || 7;
       const maxDays = 30; // Limit to prevent abuse
       const validDays = Math.min(Math.max(days, 1), maxDays);
 
@@ -131,7 +132,8 @@ export async function caldavRoutes(fastify: FastifyInstance) {
       url: '/caldav/:station/',
       handler: async (request, reply) => {
         try {
-          const { station } = request.params;
+          const params = request.params as { station: string };
+          const { station } = params;
           
           // Validate station
           const availableStations = caldavService.getAvailableStations();
@@ -179,7 +181,8 @@ export async function caldavRoutes(fastify: FastifyInstance) {
           reply.header('Content-Type', 'application/xml; charset=utf-8');
           return reply.send(xml);
         } catch (error) {
-          logger.error(`Failed to handle PROPFIND for ${request.params.station}:`, error);
+          const params = request.params as { station: string };
+          logger.error(`Failed to handle PROPFIND for ${params.station}:`, error);
           return reply.status(500).send('Internal Server Error');
         }
       }

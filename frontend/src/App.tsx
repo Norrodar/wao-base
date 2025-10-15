@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Calendar, Settings, Download, RefreshCw, Radio, Clock, User, Music, CalendarDays, Copy, ExternalLink } from 'lucide-react';
 import { api } from './api';
 import { Station, Show, Config, ScraperStatus, CalendarInfo } from './types';

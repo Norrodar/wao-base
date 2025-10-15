@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import type { Element } from 'cheerio';
 import { db, BotDJ } from '../database';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -131,7 +130,7 @@ export class DJScraperService {
     return djs;
   }
 
-  private parseDJItem($: cheerio.CheerioAPI, $item: cheerio.Cheerio<cheerio.Element>): ScrapedDJ | null {
+  private parseDJItem($: cheerio.CheerioAPI, $item: cheerio.Cheerio<any>): ScrapedDJ | null {
     const text = $item.text().trim();
     
     // Skip if empty or too short

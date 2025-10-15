@@ -1,5 +1,4 @@
 import * as cheerio from 'cheerio';
-import type { Element } from 'cheerio';
 import { ScrapedShow, ScrapeResult } from '../types';
 import { logger } from '../utils/logger';
 import { config } from '../config';
@@ -93,7 +92,7 @@ export class ScheduleScraper {
     return shows;
   }
 
-  private parseShowItem($: cheerio.CheerioAPI, $item: cheerio.Cheerio<cheerio.Element>): ScrapedShow | null {
+  private parseShowItem($: cheerio.CheerioAPI, $item: cheerio.Cheerio<any>): ScrapedShow | null {
     // Parse time information
     const $timeContainer = $item.find('.time-djname > h2.title');
     const $startTime = $timeContainer.find('span[itemprop="startDate"]');

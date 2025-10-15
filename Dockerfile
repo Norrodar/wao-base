@@ -13,7 +13,7 @@ WORKDIR /app
 COPY --from=build /app/dist ./dist
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/public ./public
-RUN adduser --system app && chown -R app:app /app
+RUN adduser --system app && chown -R app:nogroup /app
 USER app
 EXPOSE 8080
 CMD ["node", "dist/server.js"]

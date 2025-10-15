@@ -113,8 +113,10 @@ export class CalDAVService {
   private createEvent(show: Show, stationDomain: string): ICalEvent {
     const startDateTime = this.parseDateTime(show.day, show.start);
     const endDateTime = this.parseDateTime(show.day, show.end);
+    const calendar = this.calendars.get(stationDomain);
+    if (!calendar) throw new Error(`Calendar not found for station: ${stationDomain}`);
 
-    const event = this.calendar.createEvent({
+    const event = calendar.createEvent({
       id: uuidv4(),
       start: startDateTime,
       end: endDateTime,
@@ -125,15 +127,15 @@ export class CalDAVService {
       categories: [{
         name: show.style
       }],
-      status: 'CONFIRMED',
-      busyStatus: 'FREE',
-      transparency: 'TRANSPARENT',
+      status: 'CONFIRMED' as any,
+      busystatus: 'FREE' as any,
+      transparency: 'TRANSPARENT' as any,
       organizer: {
         name: show.dj,
         email: `dj@${stationDomain}`
       },
       alarms: [{
-        type: 'display',
+        type: 'display' as any,
         trigger: 900, // 15 minutes before
         description: `Show startet in 15 Minuten: ${show.title}`
       }]
@@ -145,12 +147,14 @@ export class CalDAVService {
   private createSummaryEvent(day: string, shows: Show[], stationDomain: string): ICalEvent {
     const startDateTime = this.parseDateTime(day, '00:00');
     const endDateTime = this.parseDateTime(day, '23:59');
+    const calendar = this.calendars.get(stationDomain);
+    if (!calendar) throw new Error(`Calendar not found for station: ${stationDomain}`);
 
     const showList = shows
       .map(show => `${show.start} - ${show.title} (${show.dj})`)
       .join('\n');
 
-    const event = this.calendar.createEvent({
+    const event = calendar.createEvent({
       id: uuidv4(),
       start: startDateTime,
       end: endDateTime,
@@ -161,9 +165,9 @@ export class CalDAVService {
       categories: [{
         name: 'Sendeplan'
       }],
-      status: 'CONFIRMED',
-      busyStatus: 'FREE',
-      transparency: 'TRANSPARENT',
+      status: 'CONFIRMED' as any,
+      busystatus: 'FREE' as any,
+      transparency: 'TRANSPARENT' as any,
       allDay: true
     });
 

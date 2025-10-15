@@ -226,7 +226,7 @@ export class NotificationService {
   getStatus(): { isRunning: boolean; nextRun?: Date } {
     return {
       isRunning: this.isRunning,
-      nextRun: this.cronJob ? this.cronJob.nextDate() : undefined
+      nextRun: this.cronJob ? (this.cronJob as any).nextDate() : undefined
     };
   }
 }
