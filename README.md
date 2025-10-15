@@ -57,7 +57,7 @@ shows(day, dj, title, start, end, style, UNIQUE(day, dj, title, start, end))
 1. **Repository klonen**:
 ```bash
 git clone <repository-url>
-cd tb-grabber
+cd wao-base
 ```
 
 2. **Environment konfigurieren**:
@@ -103,7 +103,7 @@ WAOBASE_PGID=1000
 
 # Server
 WAOBASE_PORT=8080
-WAOBASE_BASE_URL=http://tb-schedule.local
+WAOBASE_BASE_URL=http://wao-base.local
 
 # Stationen (kommagetrennt)
 WAOBASE_STATIONS=technobase.fm,housetime.fm
@@ -210,9 +210,9 @@ Das Frontend ist unter `http://localhost:8080` verfügbar:
 ```yaml
 version: '3.8'
 services:
-  tb-grabber:
+  wao-base:
     build: .
-    container_name: tb-grabber
+    container_name: wao-base
     restart: unless-stopped
     ports:
       - "8080:8080"
@@ -390,7 +390,7 @@ PROPFIND /caldav/technobase.fm/
 
 ```
 User: /waobot
-Bot: 🎵 Willkommen beim TB Grabber Bot!
+Bot: 🎵 Willkommen beim WAO-Base Bot!
      Hallo Max! 👋
      Ich benachrichtige dich, wenn deine Lieblings-DJs on air gehen.
 

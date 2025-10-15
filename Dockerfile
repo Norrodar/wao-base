@@ -2,8 +2,8 @@ FROM node:20-bookworm AS build
 WORKDIR /app
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
-RUN npm ci
-RUN cd frontend && npm ci
+RUN npm install --only=production=false
+RUN cd frontend && npm install --only=production=false
 COPY . .
 RUN npm run build
 
