@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Settings, Download, RefreshCw, Radio, Clock, User, Music, CalendarDays, Copy, ExternalLink } from 'lucide-react';
+import { Calendar, Settings, Download, RefreshCw, Radio, Clock, User, Music, CalendarDays, Copy, ExternalLink, Grid3X3, List } from 'lucide-react';
 import { api } from './api';
 import { Station, Show, Config, ScraperStatus, CalendarInfo } from './types';
 
-type Tab = 'dashboard' | 'config' | 'caldav';
+type Tab = 'overview' | 'dashboard' | 'config' | 'caldav';
+type ViewMode = 'calendar' | 'list';
 
 function App() {
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard');
+  const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [stations, setStations] = useState<Station[]>([]);
   const [selectedStation, setSelectedStation] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -17,6 +18,8 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<ViewMode>('calendar');
+  const [overviewShows, setOverviewShows] = useState<{[station: string]: Show[]}>({});
 
   useEffect(() => {
     loadInitialData();
@@ -27,6 +30,12 @@ function App() {
       loadSchedule();
     }
   }, [selectedStation, selectedDate]);
+
+  useEffect(() => {
+    if (selectedStation && activeTab === 'overview') {
+      loadOverviewData();
+    }
+  }, [selectedStation, activeTab]);
 
   const loadInitialData = async () => {
     try {
@@ -60,9 +69,40 @@ function App() {
       setLoading(true);
       setError(null);
       const schedule = await api.getSchedule(selectedStation, selectedDate);
-      setShows(schedule);
+      setShows(schedule || []);
     } catch (err) {
+      console.error('Error loading schedule:', err);
       setError(err instanceof Error ? err.message : 'Failed to load schedule');
+      setShows([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadOverviewData = async () => {
+    if (!selectedStation) return;
+    
+    try {
+      setLoading(true);
+      setError(null);
+      
+      // Load data for the next 7 days
+      const today = new Date();
+      const from = today.toISOString().split('T')[0];
+      const to = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      
+      const schedule = await api.getScheduleRange(selectedStation, from, to);
+      setOverviewShows(prev => ({
+        ...prev,
+        [selectedStation]: schedule || []
+      }));
+    } catch (err) {
+      console.error('Error loading overview data:', err);
+      setError(err instanceof Error ? err.message : 'Failed to load overview data');
+      setOverviewShows(prev => ({
+        ...prev,
+        [selectedStation]: []
+      }));
     } finally {
       setLoading(false);
     }
@@ -146,11 +186,18 @@ function App() {
             </div>
             <nav className="flex gap-2">
               <button
+                onClick={() => setActiveTab('overview')}
+                className={`btn ${activeTab === 'overview' ? 'btn-primary' : 'btn-secondary'}`}
+              >
+                <Grid3X3 className="w-4 h-4" />
+                Übersicht
+              </button>
+              <button
                 onClick={() => setActiveTab('dashboard')}
                 className={`btn ${activeTab === 'dashboard' ? 'btn-primary' : 'btn-secondary'}`}
               >
-                <Calendar className="w-4 h-4" />
-                Dashboard
+                <List className="w-4 h-4" />
+                Tagesansicht
               </button>
               <button
                 onClick={() => setActiveTab('caldav')}
@@ -181,6 +228,82 @@ function App() {
         {message && (
           <div className="alert alert-success mb-4">
             {message}
+          </div>
+        )}
+
+        {activeTab === 'overview' && (
+          <div className="space-y-6">
+            {/* Station Selection */}
+            <div className="card">
+              <h2 className="text-xl font-semibold mb-4">Station auswählen</h2>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {stations.map(station => (
+                  <button
+                    key={station.domain}
+                    onClick={() => setSelectedStation(station.domain)}
+                    className={`p-4 rounded-lg border-2 transition-colors ${
+                      selectedStation === station.domain
+                        ? 'border-blue-500 bg-blue-500/10 text-blue-400'
+                        : 'border-gray-600 bg-gray-800 hover:border-gray-500'
+                    }`}
+                  >
+                    <div className="font-medium">{station.name || station.domain}</div>
+                    <div className="text-sm text-gray-400 mt-1">
+                      {overviewShows[station.domain]?.length || 0} Shows
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Calendar View */}
+            {selectedStation && (
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold">
+                    {stations.find(s => s.domain === selectedStation)?.name || selectedStation} - 7-Tage Übersicht
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setViewMode('calendar')}
+                      className={`btn ${viewMode === 'calendar' ? 'btn-primary' : 'btn-secondary'}`}
+                    >
+                      <Calendar className="w-4 h-4" />
+                      Kalender
+                    </button>
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`btn ${viewMode === 'list' ? 'btn-primary' : 'btn-secondary'}`}
+                    >
+                      <List className="w-4 h-4" />
+                      Liste
+                    </button>
+                  </div>
+                </div>
+
+                {loading ? (
+                  <div className="flex justify-center py-8">
+                    <div className="loading" />
+                  </div>
+                ) : viewMode === 'calendar' ? (
+                  <CalendarView 
+                    shows={overviewShows[selectedStation] || []} 
+                    onDateClick={(date) => {
+                      setSelectedDate(date);
+                      setActiveTab('dashboard');
+                    }}
+                  />
+                ) : (
+                  <ListView 
+                    shows={overviewShows[selectedStation] || []} 
+                    onShowClick={(show) => {
+                      setSelectedDate(show.day);
+                      setActiveTab('dashboard');
+                    }}
+                  />
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -466,6 +589,126 @@ function App() {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// Calendar View Component
+function CalendarView({ shows, onDateClick }: { shows: Show[], onDateClick: (date: string) => void }) {
+  const today = new Date();
+  const days = [];
+  
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
+    const dateStr = date.toISOString().split('T')[0];
+    const dayShows = shows.filter(show => show.day === dateStr);
+    
+    days.push({
+      date,
+      dateStr,
+      shows: dayShows
+    });
+  }
+
+  return (
+    <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
+      {days.map(day => (
+        <div
+          key={day.dateStr}
+          className="bg-gray-800 rounded-lg p-3 cursor-pointer hover:bg-gray-700 transition-colors"
+          onClick={() => onDateClick(day.dateStr)}
+        >
+          <div className="text-center mb-2">
+            <div className="text-sm text-gray-400">
+              {day.date.toLocaleDateString('de-DE', { weekday: 'short' })}
+            </div>
+            <div className="font-medium">
+              {day.date.getDate()}
+            </div>
+          </div>
+          
+          <div className="space-y-1">
+            {day.shows.length === 0 ? (
+              <div className="text-xs text-gray-500 text-center">Keine Shows</div>
+            ) : (
+              day.shows.slice(0, 3).map((show, index) => (
+                <div key={index} className="text-xs bg-blue-500/20 rounded p-1">
+                  <div className="font-medium truncate">{show.dj}</div>
+                  <div className="text-gray-400 truncate">{show.title}</div>
+                  <div className="text-gray-500">{show.start} - {show.end}</div>
+                </div>
+              ))
+            )}
+            {day.shows.length > 3 && (
+              <div className="text-xs text-blue-400 text-center">
+                +{day.shows.length - 3} weitere
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// List View Component
+function ListView({ shows, onShowClick }: { shows: Show[], onShowClick: (show: Show) => void }) {
+  const groupedShows = shows.reduce((acc, show) => {
+    if (!acc[show.day]) {
+      acc[show.day] = [];
+    }
+    acc[show.day].push(show);
+    return acc;
+  }, {} as {[date: string]: Show[]});
+
+  const sortedDays = Object.keys(groupedShows).sort();
+
+  return (
+    <div className="space-y-4">
+      {sortedDays.length === 0 ? (
+        <div className="text-center py-8 text-gray-400">
+          Keine Shows in den nächsten 7 Tagen
+        </div>
+      ) : (
+        sortedDays.map(date => {
+          const dayShows = groupedShows[date];
+          const dayDate = new Date(date);
+          
+          return (
+            <div key={date} className="bg-gray-800 rounded-lg p-4">
+              <h4 className="font-medium mb-3">
+                {dayDate.toLocaleDateString('de-DE', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </h4>
+              
+              <div className="space-y-2">
+                {dayShows.map((show, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center justify-between p-3 bg-gray-700 rounded cursor-pointer hover:bg-gray-600 transition-colors"
+                    onClick={() => onShowClick(show)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-mono text-blue-400">
+                        {show.start} - {show.end}
+                      </div>
+                      <div>
+                        <div className="font-medium">{show.dj}</div>
+                        <div className="text-sm text-gray-400">{show.title}</div>
+                      </div>
+                    </div>
+                    <div className="text-sm text-gray-500">{show.style}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
