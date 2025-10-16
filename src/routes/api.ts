@@ -6,10 +6,32 @@ import { ApiResponse, ScheduleQuery, Config } from '../types';
 import { logger } from '../utils/logger';
 
 export async function apiRoutes(fastify: FastifyInstance) {
-  const schedulerService = serviceManager.getSchedulerService();
-  const telegramBot = serviceManager.getTelegramBot();
-  const notificationService = serviceManager.getNotificationService();
-  const djScraperService = serviceManager.getDJScraperService();
+  // Initialize services safely
+  let schedulerService: any, telegramBot: any, notificationService: any, djScraperService: any;
+  
+  try {
+    schedulerService = serviceManager.getSchedulerService();
+  } catch (error: any) {
+    logger.error('Failed to get scheduler service:', error);
+  }
+  
+  try {
+    telegramBot = serviceManager.getTelegramBot();
+  } catch (error: any) {
+    logger.error('Failed to get telegram bot:', error);
+  }
+  
+  try {
+    notificationService = serviceManager.getNotificationService();
+  } catch (error: any) {
+    logger.error('Failed to get notification service:', error);
+  }
+  
+  try {
+    djScraperService = serviceManager.getDJScraperService();
+  } catch (error: any) {
+    logger.error('Failed to get DJ scraper service:', error);
+  }
 
   // GET /api/stations
   fastify.get('/api/stations', async (request, reply) => {
@@ -119,7 +141,7 @@ export async function apiRoutes(fastify: FastifyInstance) {
       }
 
       // Start scraping in background
-      schedulerService.runManualScrape(station, dates).catch(error => {
+      schedulerService.runManualScrape(station, dates).catch((error: any) => {
         logger.error('Manual scrape failed:', error);
       });
 
@@ -246,10 +268,10 @@ export async function apiRoutes(fastify: FastifyInstance) {
   });
 
   // Bot endpoints
-  if (config.telegramEnabled) {
-    // GET /api/bot/status
-    fastify.get('/api/bot/status', async (request, reply) => {
-      try {
+  // GET /api/bot/status
+  fastify.get('/api/bot/status', async (request, reply) => {
+    try {
+      if (config.telegramEnabled) {
         const botStatus = telegramBot?.getStatus() || { isRunning: false };
         const notificationStatus = notificationService?.getStatus() || { isRunning: false };
         
@@ -262,57 +284,85 @@ export async function apiRoutes(fastify: FastifyInstance) {
           }
         };
         return reply.send(response);
-      } catch (error) {
-        logger.error('Failed to get bot status:', error);
-        const response: ApiResponse = {
-          success: false,
-          error: 'Failed to retrieve bot status'
-        };
-        return reply.status(500).send(response);
-      }
-    });
-
-    // GET /api/bot/djs
-    fastify.get('/api/bot/djs', async (request, reply) => {
-      try {
-        const djs = await djScraperService.getAvailableDJs();
+      } else {
         const response: ApiResponse = {
           success: true,
-          data: djs
+          data: {
+            enabled: false,
+            message: 'Telegram bot is disabled'
+          }
         };
         return reply.send(response);
-      } catch (error) {
-        logger.error('Failed to get DJs:', error);
+      }
+    } catch (error) {
+      logger.error('Failed to get bot status:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to retrieve bot status'
+      };
+      return reply.status(500).send(response);
+    }
+  });
+
+  // GET /api/bot/djs
+  fastify.get('/api/bot/djs', async (request, reply) => {
+    try {
+      if (!djScraperService) {
         const response: ApiResponse = {
           success: false,
-          error: 'Failed to retrieve DJs'
+          error: 'DJ scraper service not available'
         };
-        return reply.status(500).send(response);
+        return reply.status(503).send(response);
       }
-    });
+      
+      const djs = await djScraperService.getAvailableDJs();
+      const response: ApiResponse = {
+        success: true,
+        data: djs
+      };
+      return reply.send(response);
+    } catch (error) {
+      logger.error('Failed to get DJs:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to retrieve DJs'
+      };
+      return reply.status(500).send(response);
+    }
+  });
 
-    // POST /api/bot/scrape-djs
-    fastify.post('/api/bot/scrape-djs', async (request, reply) => {
-      try {
-        // Start DJ scraping in background
-        djScraperService.scrapeAllStations().catch(error => {
-          logger.error('DJ scraping failed:', error);
-        });
-
-        const response: ApiResponse = {
-          success: true,
-          message: 'DJ scraping started'
-        };
-        return reply.send(response);
-      } catch (error) {
-        logger.error('Failed to start DJ scraping:', error);
+  // POST /api/bot/scrape-djs
+  fastify.post('/api/bot/scrape-djs', async (request, reply) => {
+    try {
+      if (!djScraperService) {
         const response: ApiResponse = {
           success: false,
-          error: 'Failed to start DJ scraping'
+          error: 'DJ scraper service not available'
         };
-        return reply.status(500).send(response);
+        return reply.status(503).send(response);
       }
-    });
+      
+      // Start DJ scraping in background
+      djScraperService.scrapeAllStations().catch((error: any) => {
+        logger.error('DJ scraping failed:', error);
+      });
+
+      const response: ApiResponse = {
+        success: true,
+        message: 'DJ scraping started'
+      };
+      return reply.send(response);
+    } catch (error) {
+      logger.error('Failed to start DJ scraping:', error);
+      const response: ApiResponse = {
+        success: false,
+        error: 'Failed to start DJ scraping'
+      };
+      return reply.status(500).send(response);
+    }
+  });
+
+  if (config.telegramEnabled) {
 
     // GET /api/bot/users
     fastify.get('/api/bot/users', async (request, reply) => {

@@ -64,3 +64,22 @@ export interface CalDAVResponse {
     };
   };
 }
+
+export interface DJ {
+  id: number;
+  stationDomain: string;
+  djName: string;
+  realName?: string;
+  isActive: boolean;
+  lastUpdated: string;
+}
+
+export interface BotStatus {
+  enabled: boolean;
+  bot: {
+    isRunning: boolean;
+  };
+  notifications: {
+    isRunning: boolean;
+  };
+}

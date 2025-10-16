@@ -29,7 +29,9 @@ export class DJScraperService {
     
     for (const stationDomain of config.stations) {
       try {
-        await this.scrapeStation(stationDomain);
+        logger.info(`Scraping DJs at ${stationDomain}`);
+        const djs = await this.scrapeStation(stationDomain);
+        logger.info(`    Found ${djs.length} DJs`);
         // Small delay between requests
         await new Promise(resolve => setTimeout(resolve, 2000));
       } catch (error) {

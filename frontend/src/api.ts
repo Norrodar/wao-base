@@ -1,4 +1,4 @@
-import { ApiResponse, Station, Show, Config, ScraperStatus, CalDAVResponse, CalendarInfo } from './types';
+import { ApiResponse, Station, Show, Config, ScraperStatus, CalDAVResponse, CalendarInfo, DJ, BotStatus } from './types';
 
 const API_BASE = '/api';
 
@@ -128,6 +128,33 @@ class ApiClient {
       url.searchParams.set('days', days.toString());
     }
     return url.toString();
+  }
+
+  // Bot endpoints
+  async getBotStatus(): Promise<BotStatus> {
+    const response = await this.request<BotStatus>('/bot/status');
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to fetch bot status');
+    }
+    return response.data!;
+  }
+
+  async getDJs(): Promise<DJ[]> {
+    const response = await this.request<DJ[]>('/bot/djs');
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to fetch DJs');
+    }
+    return response.data || [];
+  }
+
+  async scrapeDJs(): Promise<void> {
+    const response = await this.request('/bot/scrape-djs', {
+      method: 'POST'
+    });
+    
+    if (!response.success) {
+      throw new Error(response.error || 'Failed to start DJ scraping');
+    }
   }
 }
 

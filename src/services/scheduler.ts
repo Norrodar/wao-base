@@ -97,7 +97,10 @@ export class SchedulerService {
           continue;
         }
 
-        logger.info(`Scraping station: ${stationDomain}`);
+        logger.info(`Scraping ${stationDomain}`);
+        
+        // Track results for this station
+        const stationResults: {[date: string]: number} = {};
         
         for (const date of dates) {
           try {
@@ -105,16 +108,27 @@ export class SchedulerService {
             
             if (result.success && result.shows.length > 0) {
               await this.saveShows(stationDomain, date, result.shows);
-              logger.info(`Saved ${result.shows.length} shows for ${stationDomain} on ${date}`);
+              stationResults[date] = result.shows.length;
             } else {
-              logger.warn(`No shows found for ${stationDomain} on ${date}: ${result.error || 'Unknown error'}`);
+              stationResults[date] = 0;
             }
           } catch (error) {
             logger.error(`Failed to scrape ${stationDomain} for ${date}:`, error);
+            stationResults[date] = 0;
           }
 
           // Small delay between requests
           await new Promise(resolve => setTimeout(resolve, 2000));
+        }
+
+        // Log station summary
+        for (const [date, count] of Object.entries(stationResults)) {
+          const dateStr = new Date(date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+          if (count > 0) {
+            logger.info(`    ${dateStr}.: Found ${count} Shows`);
+          } else {
+            logger.info(`    ${dateStr}.: Found nothing`);
+          }
         }
 
         // Update last scraped timestamp

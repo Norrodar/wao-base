@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Calendar, Settings, Download, RefreshCw, Radio, Clock, User, Music, CalendarDays, Copy, ExternalLink, Grid3X3, List } from 'lucide-react';
+import { Calendar, Settings, Download, RefreshCw, Radio, Clock, User, Music, CalendarDays, Copy, ExternalLink, Grid3X3, List, Users } from 'lucide-react';
 import { api } from './api';
-import { Station, Show, Config, ScraperStatus, CalendarInfo } from './types';
+import { Station, Show, Config, ScraperStatus, CalendarInfo, DJ, BotStatus } from './types';
+import { CalendarComponent } from './CalendarComponent';
 
-type Tab = 'overview' | 'dashboard' | 'config' | 'caldav';
+type Tab = 'overview' | 'dashboard' | 'config' | 'caldav' | 'djs';
 type ViewMode = 'calendar' | 'list';
 
 function App() {
@@ -15,6 +16,8 @@ function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [status, setStatus] = useState<ScraperStatus | null>(null);
   const [calendars, setCalendars] = useState<CalendarInfo[]>([]);
+  const [djs, setDjs] = useState<DJ[]>([]);
+  const [botStatus, setBotStatus] = useState<BotStatus | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -40,17 +43,21 @@ function App() {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [stationsData, configData, statusData, calendarsData] = await Promise.all([
+      const [stationsData, configData, statusData, calendarsData, djsData, botStatusData] = await Promise.all([
         api.getStations(),
         api.getConfig(),
         api.getStatus(),
-        api.getCalendars()
+        api.getCalendars(),
+        api.getDJs().catch(() => []), // Don't fail if DJs endpoint is not available
+        api.getBotStatus().catch(() => null) // Don't fail if bot status is not available
       ]);
       
       setStations(stationsData);
       setConfig(configData);
       setStatus(statusData);
       setCalendars(calendarsData.data.calendars);
+      setDjs(djsData);
+      setBotStatus(botStatusData);
       
       if (stationsData.length > 0 && !selectedStation) {
         setSelectedStation(stationsData[0].domain);
@@ -160,6 +167,34 @@ function App() {
     window.open(calendarUrl, '_blank');
   };
 
+  const handleScrapeDJs = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setMessage('DJ-Scraping gestartet...');
+      
+      await api.scrapeDJs();
+      
+      // Wait a bit then reload DJs
+      setTimeout(async () => {
+        try {
+          const djsData = await api.getDJs();
+          setDjs(djsData);
+          setMessage('DJ-Scraping abgeschlossen!');
+          setTimeout(() => setMessage(null), 3000);
+        } catch (err) {
+          setError('Fehler beim Laden der DJs');
+          setMessage(null);
+        }
+      }, 5000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Fehler beim DJ-Scraping');
+      setMessage(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const formatTime = (time: string) => {
     if (!time) return '-';
     return time;
@@ -205,6 +240,13 @@ function App() {
               >
                 <CalendarDays className="w-4 h-4" />
                 CalDAV
+              </button>
+              <button
+                onClick={() => setActiveTab('djs')}
+                className={`btn ${activeTab === 'djs' ? 'btn-primary' : 'btn-secondary'}`}
+              >
+                <Users className="w-4 h-4" />
+                DJs
               </button>
               <button
                 onClick={() => setActiveTab('config')}
@@ -286,10 +328,14 @@ function App() {
                     <div className="loading" />
                   </div>
                 ) : viewMode === 'calendar' ? (
-                  <CalendarView 
+                  <CalendarComponent 
                     shows={overviewShows[selectedStation] || []} 
                     onDateClick={(date) => {
                       setSelectedDate(date);
+                      setActiveTab('dashboard');
+                    }}
+                    onEventClick={(show) => {
+                      setSelectedDate(show.day);
                       setActiveTab('dashboard');
                     }}
                   />
@@ -545,6 +591,83 @@ function App() {
           </div>
         )}
 
+        {activeTab === 'djs' && (
+          <div className="space-y-6">
+            <div className="card">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold">🎧 DJs</h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleScrapeDJs}
+                    disabled={loading}
+                    className="btn btn-primary"
+                  >
+                    {loading ? <div className="loading" /> : <RefreshCw className="w-4 h-4" />}
+                    DJs aktualisieren
+                  </button>
+                </div>
+              </div>
+              
+              {botStatus && (
+                <div className="mb-4 p-3 bg-gray-800 rounded-lg">
+                  <div className="flex items-center gap-4">
+                    <span className={`status-indicator ${botStatus.enabled ? 'status-running' : 'status-healthy'}`}>
+                      Bot: {botStatus.enabled ? 'Aktiv' : 'Deaktiviert'}
+                    </span>
+                    {botStatus.enabled && (
+                      <>
+                        <span className={`status-indicator ${botStatus.bot.isRunning ? 'status-running' : 'status-healthy'}`}>
+                          Bot Service: {botStatus.bot.isRunning ? 'Läuft' : 'Bereit'}
+                        </span>
+                        <span className={`status-indicator ${botStatus.notifications.isRunning ? 'status-running' : 'status-healthy'}`}>
+                          Notifications: {botStatus.notifications.isRunning ? 'Aktiv' : 'Inaktiv'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {loading ? (
+                <div className="flex justify-center py-8">
+                  <div className="loading" />
+                </div>
+              ) : djs.length === 0 ? (
+                <div className="text-center py-8 text-gray-400">
+                  Keine DJs gefunden. Klicke auf "DJs aktualisieren" um DJs zu scrapen.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {djs.map(dj => (
+                    <div key={dj.id} className="bg-gray-800 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-medium text-lg">{dj.djName}</h3>
+                        <span className={`px-2 py-1 rounded text-xs ${dj.isActive ? 'bg-green-500/20 text-green-400' : 'bg-gray-500/20 text-gray-400'}`}>
+                          {dj.isActive ? 'Aktiv' : 'Inaktiv'}
+                        </span>
+                      </div>
+                      
+                      <div className="text-sm text-gray-400 mb-2">
+                        Station: {dj.stationDomain}
+                      </div>
+                      
+                      {dj.realName && (
+                        <div className="text-sm text-gray-500">
+                          Real Name: {dj.realName}
+                        </div>
+                      )}
+                      
+                      <div className="text-xs text-gray-500 mt-2">
+                        Letzte Aktualisierung: {new Date(dj.lastUpdated).toLocaleString('de-DE')}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === 'config' && config && (
           <div className="space-y-6">
             <div className="card">
@@ -593,63 +716,6 @@ function App() {
   );
 }
 
-// Calendar View Component
-function CalendarView({ shows, onDateClick }: { shows: Show[], onDateClick: (date: string) => void }) {
-  const today = new Date();
-  const days = [];
-  
-  for (let i = 0; i < 7; i++) {
-    const date = new Date(today.getTime() + i * 24 * 60 * 60 * 1000);
-    const dateStr = date.toISOString().split('T')[0];
-    const dayShows = shows.filter(show => show.day === dateStr);
-    
-    days.push({
-      date,
-      dateStr,
-      shows: dayShows
-    });
-  }
-
-  return (
-    <div className="grid grid-cols-1 md:grid-cols-7 gap-4">
-      {days.map(day => (
-        <div
-          key={day.dateStr}
-          className="bg-gray-800 rounded-lg p-3 cursor-pointer hover:bg-gray-700 transition-colors"
-          onClick={() => onDateClick(day.dateStr)}
-        >
-          <div className="text-center mb-2">
-            <div className="text-sm text-gray-400">
-              {day.date.toLocaleDateString('de-DE', { weekday: 'short' })}
-            </div>
-            <div className="font-medium">
-              {day.date.getDate()}
-            </div>
-          </div>
-          
-          <div className="space-y-1">
-            {day.shows.length === 0 ? (
-              <div className="text-xs text-gray-500 text-center">Keine Shows</div>
-            ) : (
-              day.shows.slice(0, 3).map((show, index) => (
-                <div key={index} className="text-xs bg-blue-500/20 rounded p-1">
-                  <div className="font-medium truncate">{show.dj}</div>
-                  <div className="text-gray-400 truncate">{show.title}</div>
-                  <div className="text-gray-500">{show.start} - {show.end}</div>
-                </div>
-              ))
-            )}
-            {day.shows.length > 3 && (
-              <div className="text-xs text-blue-400 text-center">
-                +{day.shows.length - 3} weitere
-              </div>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // List View Component
 function ListView({ shows, onShowClick }: { shows: Show[], onShowClick: (show: Show) => void }) {

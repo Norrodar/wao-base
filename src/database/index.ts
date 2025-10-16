@@ -121,13 +121,31 @@ class DatabaseManager {
   async getStations(): Promise<Station[]> {
     this.ensureDatabaseInitialized();
     const stmt = this.db!.prepare('SELECT * FROM stations ORDER BY domain');
-    return stmt.all() as Station[];
+    const results = stmt.all() as any[];
+    
+    // Map database fields to API fields
+    return results.map(row => ({
+      domain: row.domain,
+      name: row.name,
+      enabled: Boolean(row.enabled),
+      lastScraped: row.last_scraped ? new Date(row.last_scraped) : undefined
+    }));
   }
 
   async getStation(domain: string): Promise<Station | null> {
     this.ensureDatabaseInitialized();
     const stmt = this.db!.prepare('SELECT * FROM stations WHERE domain = ?');
-    return stmt.get(domain) as Station | null;
+    const result = stmt.get(domain) as any;
+    
+    if (!result) return null;
+    
+    // Map database fields to API fields
+    return {
+      domain: result.domain,
+      name: result.name,
+      enabled: Boolean(result.enabled),
+      lastScraped: result.last_scraped ? new Date(result.last_scraped) : undefined
+    };
   }
 
   async upsertStation(station: Station): Promise<void> {
@@ -193,7 +211,20 @@ class DatabaseManager {
     query += ' ORDER BY day, start_time';
 
     const stmt = this.db!.prepare(query);
-    return stmt.all(...params) as Show[];
+    const results = stmt.all(...params) as any[];
+    
+    // Map database fields to API fields
+    return results.map(row => ({
+      id: row.id,
+      day: row.day,
+      stationDomain: row.station_domain,
+      dj: row.dj,
+      title: row.title,
+      start: row.start_time,
+      end: row.end_time,
+      style: row.style,
+      createdAt: row.created_at
+    }));
   }
 
   async upsertShows(shows: Show[]): Promise<void> {

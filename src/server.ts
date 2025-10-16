@@ -5,11 +5,11 @@ import helmet from '@fastify/helmet';
 import staticFiles from '@fastify/static';
 import { join } from 'path';
 import { config } from './config';
-import { logger } from './utils/logger';
+import { logger, logStartupBanner } from './utils/logger';
 import { db } from './database';
 import { serviceManager } from './services/service-manager';
 import { healthRoutes } from './routes/health';
-import { apiRoutes } from './routes/api';
+import { apiRoutes } from './routes/api-simple';
 import { caldavRoutes } from './routes/caldav';
 
 async function buildServer() {
@@ -35,9 +35,29 @@ async function buildServer() {
   });
 
   // Register routes
-  await fastify.register(healthRoutes);
-  await fastify.register(apiRoutes);
-  await fastify.register(caldavRoutes);
+  try {
+    await fastify.register(healthRoutes);
+    logger.info('Health routes registered');
+  } catch (error) {
+    logger.error('Failed to register health routes:', error);
+    throw error;
+  }
+  
+  try {
+    await fastify.register(apiRoutes);
+    logger.info('API routes registered');
+  } catch (error) {
+    logger.error('Failed to register API routes:', error);
+    throw error;
+  }
+  
+  try {
+    await fastify.register(caldavRoutes);
+    logger.info('CalDAV routes registered');
+  } catch (error) {
+    logger.error('Failed to register CalDAV routes:', error);
+    throw error;
+  }
 
   // Catch-all route for SPA
   fastify.setNotFoundHandler((request, reply) => {
@@ -63,6 +83,9 @@ async function buildServer() {
 
 async function start() {
   try {
+    // Show startup banner
+    logStartupBanner();
+    
     // Ensure data directory exists
     const fs = await import('fs');
     if (!fs.existsSync(config.dataDir)) {
@@ -115,12 +138,23 @@ async function start() {
     await serviceManager.startServices();
 
     // Build and start server
-    const server = await buildServer();
+    let server;
+    try {
+      server = await buildServer();
+    } catch (error) {
+      logger.error('Failed to build server:', error);
+      throw error;
+    }
     
-    await server.listen({
-      port: config.port,
-      host: '0.0.0.0'
-    });
+    try {
+      await server.listen({
+        port: config.port,
+        host: '0.0.0.0'
+      });
+    } catch (error) {
+      logger.error('Failed to start server on port:', error);
+      throw error;
+    }
 
     logger.info(`Server listening on http://0.0.0.0:${config.port}`);
     logger.info(`Environment: ${config.nodeEnv}`);
