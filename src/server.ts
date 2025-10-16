@@ -48,6 +48,12 @@ async function buildServer() {
       });
     }
     
+    // Check if database is available, if not show error page
+    const dbStatus = db.getInitializationStatus();
+    if (!dbStatus.isInitialized) {
+      return reply.sendFile('error.html');
+    }
+    
     // Serve index.html for all non-API routes (SPA fallback)
     return reply.sendFile('index.html');
   });
@@ -63,9 +69,47 @@ async function start() {
       fs.mkdirSync(config.dataDir, { recursive: true });
     }
 
-    // Initialize database
-    await db.healthCheck();
-    logger.info('Database initialized');
+    // Check database initialization
+    const dbHealthy = await db.healthCheck();
+    const dbStatus = db.getInitializationStatus();
+    
+    if (!dbHealthy) {
+      logger.error('Database initialization failed, starting server in error mode');
+      logger.error('Database status:', dbStatus);
+      
+      // Start server in error mode (will show error page)
+      const server = await buildServer();
+      
+      await server.listen({
+        port: config.port,
+        host: '0.0.0.0'
+      });
+
+      logger.info(`Server listening on http://0.0.0.0:${config.port} (Error Mode)`);
+      logger.info('Please check the logs for database initialization errors');
+      
+      // Graceful shutdown
+      const gracefulShutdown = async (signal: string) => {
+        logger.info(`Received ${signal}, shutting down gracefully...`);
+        
+        try {
+          await server.close();
+          db.close();
+          logger.info('Server shut down successfully');
+          process.exit(0);
+        } catch (error) {
+          logger.error('Error during shutdown:', error);
+          process.exit(1);
+        }
+      };
+
+      process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+      process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+      
+      return; // Exit early in error mode
+    }
+
+    logger.info('Database initialized successfully');
 
     // Start all services
     await serviceManager.startServices();

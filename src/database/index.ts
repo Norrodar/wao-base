@@ -42,17 +42,63 @@ export interface BotDJ {
 }
 
 class DatabaseManager {
-  private db: Database.Database;
+  private db: Database.Database | null = null;
+  private isInitialized = false;
+  private initializationError: Error | null = null;
 
   constructor() {
-    const dbPath = join(config.dataDir, 'schedule.db');
-    this.db = new Database(dbPath);
-    this.db.pragma('journal_mode = WAL');
-    this.db.pragma('foreign_keys = ON');
-    this.initializeTables();
+    this.initializeDatabase();
+  }
+
+  private initializeDatabase(): void {
+    try {
+      const dbPath = join(config.dataDir, 'schedule.db');
+      logger.info(`Attempting to initialize database at: ${dbPath}`);
+      
+      // Check if data directory exists and is writable
+      const fs = require('fs');
+      if (!fs.existsSync(config.dataDir)) {
+        logger.info(`Data directory does not exist, creating: ${config.dataDir}`);
+        fs.mkdirSync(config.dataDir, { recursive: true });
+      }
+
+      // Test write permissions
+      const testFile = join(config.dataDir, '.write-test');
+      try {
+        fs.writeFileSync(testFile, 'test');
+        fs.unlinkSync(testFile);
+        logger.info('Data directory is writable');
+      } catch (writeError) {
+        const errorMessage = writeError instanceof Error ? writeError.message : String(writeError);
+        throw new Error(`Data directory is not writable: ${config.dataDir}. Please check permissions. Error: ${errorMessage}`);
+      }
+
+      this.db = new Database(dbPath);
+      this.db.pragma('journal_mode = WAL');
+      this.db.pragma('foreign_keys = ON');
+      this.initializeTables();
+      this.isInitialized = true;
+      logger.info('Database initialized successfully');
+    } catch (error) {
+      this.initializationError = error as Error;
+      logger.error('Failed to initialize database:', error);
+      
+      // Provide specific error message for common permission issues
+      if (error instanceof Error && error.message.includes('SQLITE_CANTOPEN')) {
+        logger.error('DATABASE PERMISSION ERROR: Cannot open database file. This is likely due to:');
+        logger.error('1. Incorrect file permissions on the data directory');
+        logger.error('2. The data directory does not exist or is not accessible');
+        logger.error('3. The container user does not have write permissions');
+        logger.error(`Data directory path: ${config.dataDir}`);
+        logger.error('Please check your Docker volume mount and file permissions.');
+      }
+    }
   }
 
   private initializeTables(): void {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
     try {
       this.db.exec(createTables);
       logger.info('Database tables initialized');
@@ -62,19 +108,31 @@ class DatabaseManager {
     }
   }
 
+  private ensureDatabaseInitialized(): void {
+    if (!this.isInitialized || !this.db) {
+      if (this.initializationError) {
+        throw new Error(`Database not available: ${this.initializationError.message}`);
+      }
+      throw new Error('Database not initialized');
+    }
+  }
+
   // Station methods
   async getStations(): Promise<Station[]> {
-    const stmt = this.db.prepare('SELECT * FROM stations ORDER BY domain');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM stations ORDER BY domain');
     return stmt.all() as Station[];
   }
 
   async getStation(domain: string): Promise<Station | null> {
-    const stmt = this.db.prepare('SELECT * FROM stations WHERE domain = ?');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM stations WHERE domain = ?');
     return stmt.get(domain) as Station | null;
   }
 
   async upsertStation(station: Station): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO stations (domain, name, enabled, last_scraped, updated_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(domain) DO UPDATE SET
@@ -88,6 +146,7 @@ class DatabaseManager {
 
   // Day methods
   async getDays(stationDomain: string, from?: string, to?: string): Promise<Day[]> {
+    this.ensureDatabaseInitialized();
     let query = 'SELECT * FROM days WHERE station_domain = ?';
     const params: any[] = [stationDomain];
 
@@ -102,12 +161,13 @@ class DatabaseManager {
 
     query += ' ORDER BY day';
 
-    const stmt = this.db.prepare(query);
+    const stmt = this.db!.prepare(query);
     return stmt.all(...params) as Day[];
   }
 
   async upsertDay(day: Day): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO days (station_domain, day, scraped_at)
       VALUES (?, ?, ?)
       ON CONFLICT(station_domain, day) DO UPDATE SET
@@ -118,6 +178,7 @@ class DatabaseManager {
 
   // Show methods
   async getShows(stationDomain: string, date?: string, from?: string, to?: string): Promise<Show[]> {
+    this.ensureDatabaseInitialized();
     let query = 'SELECT * FROM shows WHERE station_domain = ?';
     const params: any[] = [stationDomain];
 
@@ -131,18 +192,19 @@ class DatabaseManager {
 
     query += ' ORDER BY day, start_time';
 
-    const stmt = this.db.prepare(query);
+    const stmt = this.db!.prepare(query);
     return stmt.all(...params) as Show[];
   }
 
   async upsertShows(shows: Show[]): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO shows (day, station_domain, dj, title, start_time, end_time, style)
       VALUES (?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(day, station_domain, dj, title, start_time, end_time) DO NOTHING
     `);
 
-    const transaction = this.db.transaction((shows: Show[]) => {
+    const transaction = this.db!.transaction((shows: Show[]) => {
       for (const show of shows) {
         stmt.run(
           show.day,
@@ -161,13 +223,22 @@ class DatabaseManager {
 
   // Cleanup methods
   async cleanupOldData(): Promise<void> {
-    const stmt = this.db.prepare(cleanupOldData(config.retentionDays));
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(cleanupOldData(config.retentionDays));
     const result = stmt.run();
     logger.info(`Cleaned up old data: ${result.changes} records removed`);
   }
 
   // Health check
   async healthCheck(): Promise<boolean> {
+    if (!this.isInitialized || !this.db) {
+      logger.error('Database health check failed: Database not initialized');
+      if (this.initializationError) {
+        logger.error('Initialization error:', this.initializationError.message);
+      }
+      return false;
+    }
+    
     try {
       const stmt = this.db.prepare('SELECT 1');
       stmt.get();
@@ -178,9 +249,18 @@ class DatabaseManager {
     }
   }
 
+  // Get initialization status
+  getInitializationStatus(): { isInitialized: boolean; error?: string } {
+    return {
+      isInitialized: this.isInitialized,
+      error: this.initializationError?.message
+    };
+  }
+
   // Bot User methods
   async upsertBotUser(user: Omit<BotUser, 'createdAt' | 'updatedAt'>): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO bot_users (telegram_id, username, first_name, last_name, language_code, is_active, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(telegram_id) DO UPDATE SET
@@ -195,7 +275,8 @@ class DatabaseManager {
   }
 
   async getBotUser(telegramId: number): Promise<BotUser | null> {
-    const stmt = this.db.prepare('SELECT * FROM bot_users WHERE telegram_id = ?');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM bot_users WHERE telegram_id = ?');
     const result = stmt.get(telegramId) as any;
     if (!result) return null;
     
@@ -213,7 +294,8 @@ class DatabaseManager {
 
   // Bot User Preferences methods
   async upsertBotUserPreferences(preferences: Omit<BotUserPreferences, 'createdAt' | 'updatedAt'>): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO bot_user_preferences (telegram_id, notification_times, timezone, updated_at)
       VALUES (?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(telegram_id) DO UPDATE SET
@@ -226,7 +308,8 @@ class DatabaseManager {
   }
 
   async getBotUserPreferences(telegramId: number): Promise<BotUserPreferences | null> {
-    const stmt = this.db.prepare('SELECT * FROM bot_user_preferences WHERE telegram_id = ?');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM bot_user_preferences WHERE telegram_id = ?');
     const result = stmt.get(telegramId) as any;
     if (!result) return null;
     
@@ -249,7 +332,8 @@ class DatabaseManager {
 
   // Bot Favorite DJs methods
   async addBotFavoriteDJ(telegramId: number, stationDomain: string, djName: string): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO bot_favorite_djs (telegram_id, station_domain, dj_name)
       VALUES (?, ?, ?)
       ON CONFLICT(telegram_id, station_domain, dj_name) DO NOTHING
@@ -258,7 +342,8 @@ class DatabaseManager {
   }
 
   async removeBotFavoriteDJ(telegramId: number, stationDomain: string, djName: string): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       DELETE FROM bot_favorite_djs 
       WHERE telegram_id = ? AND station_domain = ? AND dj_name = ?
     `);
@@ -266,7 +351,8 @@ class DatabaseManager {
   }
 
   async getBotFavoriteDJs(telegramId: number): Promise<BotFavoriteDJ[]> {
-    const stmt = this.db.prepare('SELECT * FROM bot_favorite_djs WHERE telegram_id = ? ORDER BY station_domain, dj_name');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM bot_favorite_djs WHERE telegram_id = ? ORDER BY station_domain, dj_name');
     const results = stmt.all(telegramId) as any[];
     
     return results.map(result => ({
@@ -280,7 +366,8 @@ class DatabaseManager {
 
   // Bot DJs methods
   async upsertBotDJ(dj: Omit<BotDJ, 'id' | 'lastUpdated'>): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO bot_djs (station_domain, dj_name, real_name, is_active, last_updated)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(station_domain, dj_name) DO UPDATE SET
@@ -292,6 +379,7 @@ class DatabaseManager {
   }
 
   async getBotDJs(stationDomain?: string): Promise<BotDJ[]> {
+    this.ensureDatabaseInitialized();
     let query = 'SELECT * FROM bot_djs WHERE is_active = 1';
     const params: any[] = [];
     
@@ -302,7 +390,7 @@ class DatabaseManager {
     
     query += ' ORDER BY station_domain, dj_name';
     
-    const stmt = this.db.prepare(query);
+    const stmt = this.db!.prepare(query);
     const results = stmt.all(...params) as any[];
     
     return results.map(result => ({
@@ -317,7 +405,8 @@ class DatabaseManager {
 
   // Bot Notifications methods
   async markNotificationSent(telegramId: number, showId: number, notificationType: string): Promise<void> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       INSERT INTO bot_notifications_sent (telegram_id, show_id, notification_type)
       VALUES (?, ?, ?)
       ON CONFLICT(telegram_id, show_id, notification_type) DO NOTHING
@@ -326,7 +415,8 @@ class DatabaseManager {
   }
 
   async isNotificationSent(telegramId: number, showId: number, notificationType: string): Promise<boolean> {
-    const stmt = this.db.prepare(`
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare(`
       SELECT 1 FROM bot_notifications_sent 
       WHERE telegram_id = ? AND show_id = ? AND notification_type = ?
     `);
@@ -335,7 +425,8 @@ class DatabaseManager {
   }
 
   async getActiveBotUsers(): Promise<BotUser[]> {
-    const stmt = this.db.prepare('SELECT * FROM bot_users WHERE is_active = 1');
+    this.ensureDatabaseInitialized();
+    const stmt = this.db!.prepare('SELECT * FROM bot_users WHERE is_active = 1');
     const results = stmt.all() as any[];
     
     return results.map(result => ({
@@ -351,7 +442,9 @@ class DatabaseManager {
   }
 
   close(): void {
-    this.db.close();
+    if (this.db) {
+      this.db.close();
+    }
   }
 }
 
